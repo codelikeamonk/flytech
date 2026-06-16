@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BLE Device Console</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-border: #262c36;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --accent: #4fd1c5;
+    --accent-dim: rgba(79, 209, 197, 0.14);
+    --danger: #f87171;
+    --danger-dim: rgba(248, 113, 113, 0.14);
+    --warn: #fbbf24;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+  }
+
+  .wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 28px 18px 60px;
+  }
+
+  header h1 {
+    font-size: 19px;
+    font-weight: 600;
+    margin: 0 0 2px;
+    letter-spacing: -0.01em;
+  }
+
+  header p {
+    margin: 0 0 20px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12px;
+    font-family: var(--mono);
+    padding: 5px 10px;
+    border-radius: 100px;
+    border: 1px solid var(--panel-border);
+    background: var(--panel);
+    margin-bottom: 18px;
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+  }
+
+  .pill[data-state="connected"] .dot { background: var(--accent); }
+  .pill[data-state="connected"] { border-color: var(--accent-dim); color: var(--accent); }
+
+  .pill[data-state="connecting"] .dot {
+    background: var(--warn);
+    animation: pulse 1s ease-in-out infinite;
+  }
+  .pill[data-state="connecting"] { border-color: rgba(251,191,36,0.2); color: var(--warn); }
+
+  .pill[data-state="error"] .dot { background: var(--danger); }
+  .pill[data-state="error"] { border-color: var(--danger-dim); color: var(--danger); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pill[data-state="connecting"] .dot { animation: none; }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+
+  .card h2 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin: 0 0 14px;
+    font-weight: 600;
+  }
+
+  .card h2 .uuid {
+    color: var(--text-dim);
+    opacity: 0.7;
+    font-family: var(--mono);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  button {
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 8px;
+    border: 1px solid var(--panel-border);
+    background: #1c2230;
+    color: var(--text);
+    padding: 11px 16px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  button:hover:not(:disabled) { border-color: #3a4252; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  button:focus-visible, input:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  #connect-btn, #reconnect-last-btn, #disconnect-btn, #cancel-reconnect-btn { width: 100%; }
+  #reconnect-last-btn, #disconnect-btn, #cancel-reconnect-btn { margin-top: 10px; }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #06201c;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover:not(:disabled) { background: #5fe0d4; }
+
+  .btn-secondary {
+    background: var(--accent-dim);
+    border-color: var(--accent-dim);
+    color: var(--accent);
+  }
+  .btn-secondary:hover:not(:disabled) { border-color: var(--accent); }
+
+  .btn-danger-outline {
+    background: transparent;
+    color: var(--danger);
+    border-color: var(--danger-dim);
+  }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .toggle-row input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 15px;
+    height: 15px;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin: 10px 0 0;
+    line-height: 1.5;
+  }
+
+  .status-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .status-value {
+    font-family: var(--mono);
+    font-size: 36px;
+    font-weight: 600;
+  }
+
+  .status-meta {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    text-align: right;
+  }
+
+  .bar-track {
+    height: 8px;
+    border-radius: 100px;
+    background: #0b0e13;
+    border: 1px solid var(--panel-border);
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+
+  .bar-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    transition: width 0.25s ease;
+  }
+
+  .control-grid {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+  }
+
+  input[type="number"] {
+    width: 64px;
+    font-family: var(--mono);
+    font-size: 14px;
+    background: #0b0e13;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .log {
+    background: #0b0e13;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    height: 180px;
+    overflow-y: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .log-line { white-space: pre-wrap; word-break: break-word; }
+  .log-line .t { color: var(--text-dim); margin-right: 8px; }
+  .log-line.info { color: var(--text); }
+  .log-line.ok { color: var(--accent); }
+  .log-line.err { color: var(--danger); }
+  .log-line.warn { color: var(--warn); }
+
+  .profile {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.8;
+  }
+  .profile b { color: var(--text); }
+
+  .banner {
+    background: var(--danger-dim);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    margin-bottom: 18px;
+    line-height: 1.5;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>BLE Device Console</h1>
+    <p>Connects to the simulated peripheral over Web Bluetooth.</p>
+  </header>
+
+  <div id="banner" class="banner" style="display:none;"></div>
+
+  <span class="pill" id="conn-pill" data-state="disconnected">
+    <span class="dot"></span>
+    <span id="conn-label">Disconnected</span>
+  </span>
+
+  <div class="card">
+    <div class="toggle-row">
+      <input type="checkbox" id="auto-reconnect-toggle" checked />
+      <label for="auto-reconnect-toggle">Auto-reconnect if the connection drops</label>
+    </div>
+    <button class="btn-primary" id="connect-btn">Connect to device</button>
+    <button class="btn-secondary" id="reconnect-last-btn" style="display:none;">Reconnect to last device</button>
+    <button class="btn-danger-outline" id="disconnect-btn" style="display:none;">Disconnect</button>
+    <button class="btn-secondary" id="cancel-reconnect-btn" style="display:none;">Cancel reconnect</button>
+    <p class="hint">Tapping connect opens the browser's device picker. Only devices advertising the service UUID below will appear. If this browser already remembers a device from a previous session, a quick-reconnect option shows up here too.</p>
+  </div>
+
+  <div class="card">
+    <h2>Status &nbsp;<span class="uuid">0000FF01</span></h2>
+    <div class="status-row">
+      <div class="status-value" id="status-value">&mdash;</div>
+      <div class="status-meta" id="status-meta">no reading yet</div>
+    </div>
+    <div class="bar-track"><div class="bar-fill" id="status-bar"></div></div>
+    <button id="read-btn" disabled>Read now</button>
+  </div>
+
+  <div class="card">
+    <h2>Control &nbsp;<span class="uuid">0000FF02</span></h2>
+    <div class="control-grid">
+      <input type="range" id="control-slider" min="0" max="255" value="0" disabled />
+      <input type="number" id="control-number" min="0" max="255" value="0" disabled />
+    </div>
+    <button class="btn-primary" id="send-btn" disabled>Send value</button>
+    <p class="hint" id="send-meta">nothing sent yet</p>
+  </div>
+
+  <div class="card">
+    <h2>Activity log</h2>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="card">
+    <h2>Profile reference</h2>
+    <div class="profile">
+      Service&nbsp; <b>0000FF00-0000-1000-8000-00805F9B34FB</b><br/>
+      Status&nbsp;&nbsp; <b>0000FF01-0000-1000-8000-00805F9B34FB</b> (Read, Notify)<br/>
+      Control&nbsp; <b>0000FF02-0000-1000-8000-00805F9B34FB</b> (Write)
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- BLE profile constants ----
+  const SERVICE_UUID = "0000ff00-0000-1000-8000-00805f9b34fb";
+  const STATUS_CHAR_UUID = "0000ff01-0000-1000-8000-00805f9b34fb";
+  const CONTROL_CHAR_UUID = "0000ff02-0000-1000-8000-00805f9b34fb";
+
+  // ---- reconnect tuning ----
+  const MAX_RECONNECT_ATTEMPTS = 5;
+  const RECONNECT_BASE_DELAY_MS = 1000;
+  const RECONNECT_MAX_DELAY_MS = 8000;
+
+  // ---- DOM refs ----
+  const connPill = document.getElementById("conn-pill");
+  const connLabel = document.getElementById("conn-label");
+  const connectBtn = document.getElementById("connect-btn");
+  const reconnectLastBtn = document.getElementById("reconnect-last-btn");
+  const disconnectBtn = document.getElementById("disconnect-btn");
+  const cancelReconnectBtn = document.getElementById("cancel-reconnect-btn");
+  const autoReconnectToggle = document.getElementById("auto-reconnect-toggle");
+  const readBtn = document.getElementById("read-btn");
+  const sendBtn = document.getElementById("send-btn");
+  const slider = document.getElementById("control-slider");
+  const number = document.getElementById("control-number");
+  const sendMeta = document.getElementById("send-meta");
+  const statusValue = document.getElementById("status-value");
+  const statusMeta = document.getElementById("status-meta");
+  const statusBar = document.getElementById("status-bar");
+  const logEl = document.getElementById("log");
+  const bannerEl = document.getElementById("banner");
+
+  // ---- state ----
+  let device = null;
+  let rememberedDevice = null;
+  let statusChar = null;
+  let controlChar = null;
+  let intentionalDisconnect = false;
+  let reconnectAttempt = 0;
+  let reconnectTimer = null;
+  const listenedDevices = new WeakSet();
+
+  // ---- logging ----
+  function ts() {
+    return new Date().toLocaleTimeString("en-US", { hour12: false });
+  }
+
+  function log(message, level) {
+    const line = document.createElement("div");
+    line.className = "log-line " + (level || "info");
+    const t = document.createElement("span");
+    t.className = "t";
+    t.textContent = ts();
+    line.appendChild(t);
+    line.appendChild(document.createTextNode(message));
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function showBanner(text) {
+    bannerEl.textContent = text;
+    bannerEl.style.display = "block";
+  }
+
+  // ---- UI state ----
+  function applyState(state, label) {
+    connPill.dataset.state = (state === "unavailable") ? "error" : state;
+    connLabel.textContent = label;
+
+    const connected = state === "connected";
+    const busy = state === "connecting";
+
+    connectBtn.style.display = (!connected && !busy) ? "block" : "none";
+    reconnectLastBtn.style.display = (!connected && !busy && rememberedDevice) ? "block" : "none";
+    disconnectBtn.style.display = connected ? "block" : "none";
+    cancelReconnectBtn.style.display = (busy && reconnectAttempt > 0) ? "block" : "none";
+
+    readBtn.disabled = !connected;
+    sendBtn.disabled = !connected;
+    slider.disabled = !connected;
+    number.disabled = !connected;
+  }
+
+  function renderStatusValue(byteValue, source) {
+    statusValue.textContent = byteValue;
+    statusMeta.textContent = source + " · " + ts();
+    const pct = Math.max(0, Math.min(100, byteValue));
+    statusBar.style.width = pct + "%";
+  }
+
+  // ---- error classification ----
+  function describeError(err) {
+    if (!err) return "Unknown error";
+    const name = err.name || "";
+    const msg = err.message || String(err);
+    if (name === "NotFoundError") {
+      if (/cancel/i.test(msg)) return "Cancelled — no device selected.";
+      if (/service/i.test(msg) || /characteristic/i.test(msg)) {
+        return "Expected service/characteristic not found on this device — check the simulator's GATT setup matches the UUIDs above.";
+      }
+      return "No matching device found. Check the simulator is advertising the service UUID and that Bluetooth is turned on.";
+    }
+    if (name === "SecurityError") {
+      return "Blocked by the browser's Bluetooth permission policy, or Bluetooth access was denied.";
+    }
+    if (name === "NetworkError") {
+      return "Lost contact with the device — it may be out of range, powered off, or no longer advertising.";
+    }
+    if (name === "InvalidStateError") {
+      return "The device isn't in a state that allows this operation right now.";
+    }
+    return msg;
+  }
+
+  // ---- device adoption (attach disconnect listener exactly once per device) ----
+  function adoptDevice(d) {
+    if (!listenedDevices.has(d)) {
+      d.addEventListener("gattserverdisconnected", onDisconnected);
+      listenedDevices.add(d);
+    }
+  }
+
+  // ---- notifications ----
+  function handleStatusNotification(event) {
+    const value = event.target.value.getUint8(0);
+    renderStatusValue(value, "notify");
+    log("Status notification received: " + value, "ok");
+  }
+
+  // ---- disconnect handling + auto-reconnect ----
+  function cancelReconnect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    reconnectAttempt = 0;
+  }
+
+  function onDisconnected() {
+    statusChar = null;
+    controlChar = null;
+
+    if (intentionalDisconnect) {
+      intentionalDisconnect = false;
+      cancelReconnect();
+      log("Disconnected", "warn");
+      applyState("disconnected", "Disconnected");
+      return;
+    }
+
+    log("Connection lost unexpectedly", "warn");
+    if (autoReconnectToggle.checked) {
+      scheduleReconnect();
+    } else {
+      applyState("disconnected", "Disconnected");
+    }
+  }
+
+  function scheduleReconnect() {
+    if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      log("Auto-reconnect gave up after " + MAX_RECONNECT_ATTEMPTS + " attempts", "err");
+      applyState("error", "Reconnect failed");
+      return;
+    }
+    reconnectAttempt++;
+    const delay = Math.min(
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, reconnectAttempt - 1),
+      RECONNECT_MAX_DELAY_MS
+    );
+    applyState("connecting", "Reconnecting in " + Math.round(delay / 1000) + "s (attempt " + reconnectAttempt + "/" + MAX_RECONNECT_ATTEMPTS + ")");
+    log("Scheduling reconnect attempt " + reconnectAttempt + "/" + MAX_RECONNECT_ATTEMPTS + " in " + delay + "ms", "warn");
+
+    reconnectTimer = setTimeout(async function () {
+      applyState("connecting", "Reconnecting (attempt " + reconnectAttempt + "/" + MAX_RECONNECT_ATTEMPTS + ")…");
+      try {
+        await connectToDevice(device, { isReconnect: true });
+        reconnectAttempt = 0;
+      } catch (err) {
+        log("Reconnect attempt " + reconnectAttempt + " failed: " + describeError(err), "err");
+        scheduleReconnect();
+      }
+    }, delay);
+  }
+
+  // ---- core GATT setup, shared by first connect / manual reconnect / auto-reconnect ----
+  async function connectToDevice(targetDevice, opts) {
+    opts = opts || {};
+    device = targetDevice;
+
+    const server = await device.gatt.connect();
+    log("GATT server connected", "ok");
+
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    statusChar = await service.getCharacteristic(STATUS_CHAR_UUID);
+    controlChar = await service.getCharacteristic(CONTROL_CHAR_UUID);
+    log("Discovered status and control characteristics", "ok");
+
+    await statusChar.startNotifications();
+    statusChar.addEventListener("characteristicvaluechanged", handleStatusNotification);
+    log("Subscribed to status notifications", "ok");
+
+    const initial = await statusChar.readValue();
+    renderStatusValue(initial.getUint8(0), opts.isReconnect ? "re-read after reconnect" : "initial read");
+    log((opts.isReconnect ? "Reconnected. " : "") + "Status read: " + initial.getUint8(0), "ok");
+
+    applyState("connected", "Connected · " + (device.name || "device"));
+  }
+
+  // ---- entry points ----
+  async function requestAndConnect() {
+    if (!navigator.bluetooth) return;
+    try {
+      cancelReconnect();
+      intentionalDisconnect = false;
+      applyState("connecting", "Requesting device…");
+      log("Opening device picker (filtering on service " + SERVICE_UUID + ")");
+
+      const selected = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID],
+      });
+      adoptDevice(selected);
+      log("Selected " + (selected.name || "unnamed device"));
+
+      applyState("connecting", "Connecting…");
+      await connectToDevice(selected);
+    } catch (err) {
+      log("Connection failed: " + describeError(err), "err");
+      applyState("error", "Connection failed");
+    }
+  }
+
+  async function reconnectToLastDevice() {
+    if (!rememberedDevice) return;
+    try {
+      cancelReconnect();
+      intentionalDisconnect = false;
+      adoptDevice(rememberedDevice);
+      applyState("connecting", "Connecting to " + (rememberedDevice.name || "remembered device") + "…");
+      log("Reconnecting to remembered device: " + (rememberedDevice.name || rememberedDevice.id));
+      await connectToDevice(rememberedDevice);
+    } catch (err) {
+      log("Reconnect failed: " + describeError(err), "err");
+      applyState("error", "Connection failed");
+    }
+  }
+
+  function disconnectDevice() {
+    cancelReconnect();
+    intentionalDisconnect = true;
+    if (device && device.gatt && device.gatt.connected) {
+      device.gatt.disconnect();
+    } else {
+      intentionalDisconnect = false;
+      applyState("disconnected", "Disconnected");
+    }
+  }
+
+  function cancelReconnectClicked() {
+    cancelReconnect();
+    intentionalDisconnect = false;
+    log("Reconnect cancelled by user", "warn");
+    applyState("disconnected", "Disconnected");
+  }
+
+  // Some peripherals/stacks leave gatt.connected reporting true even after
+  // the underlying link has effectively gone bad, so a read/write failure
+  // here is treated as a possible disconnect signal too. Forcing a clean
+  // teardown lets the existing auto-reconnect logic recover the link instead
+  // of leaving the UI stuck on "Connected" while every operation quietly fails.
+  function handlePossibleStaleConnection(err) {
+    const name = err && err.name;
+    if (name === "InvalidStateError" || name === "NetworkError") {
+      if (device && device.gatt && device.gatt.connected) {
+        log("This looks like a stale connection rather than a one-off failure — forcing a disconnect so auto-reconnect can re-establish a clean link.", "warn");
+        device.gatt.disconnect();
+      }
+    }
+  }
+
+  async function readStatusNow() {
+    if (!statusChar) return;
+    try {
+      const value = await statusChar.readValue();
+      renderStatusValue(value.getUint8(0), "manual read");
+      log("Manual status read: " + value.getUint8(0), "ok");
+    } catch (err) {
+      log("Read failed: " + describeError(err), "err");
+      handlePossibleStaleConnection(err);
+    }
+  }
+
+  async function sendControlValue() {
+    if (!controlChar) return;
+    const v = Math.max(0, Math.min(255, parseInt(number.value, 10) || 0));
+    const buffer = new Uint8Array([v]);
+    try {
+      if (typeof controlChar.writeValueWithResponse === "function") {
+        await controlChar.writeValueWithResponse(buffer);
+      } else {
+        await controlChar.writeValue(buffer);
+      }
+      sendMeta.textContent = "last sent: " + v + " · " + ts();
+      log("Wrote control value: " + v, "ok");
+    } catch (err) {
+      log("Write failed: " + describeError(err), "err");
+      sendMeta.textContent = "last write failed";
+      handlePossibleStaleConnection(err);
+    }
+  }
+
+  // ---- remembered device lookup (Web Bluetooth persistent permissions) ----
+  async function loadRememberedDevice() {
+    if (!navigator.bluetooth || typeof navigator.bluetooth.getDevices !== "function") {
+      return; // not supported in this browser build — core app still works fine without it
+    }
+    try {
+      const devices = await navigator.bluetooth.getDevices();
+      if (devices && devices.length > 0) {
+        rememberedDevice = devices[devices.length - 1];
+        log("Found a remembered device: " + (rememberedDevice.name || rememberedDevice.id));
+        applyState("disconnected", "Disconnected");
+      }
+    } catch (err) {
+      log("Could not check for remembered devices: " + describeError(err), "warn");
+    }
+  }
+
+  // ---- availability check ----
+  async function checkAvailability() {
+    if (!navigator.bluetooth) {
+      showBanner("This browser doesn't support Web Bluetooth. Use a recent desktop or Android build of Chrome, Edge, or Opera. Firefox and Safari are not supported.");
+      connectBtn.disabled = true;
+      log("navigator.bluetooth is unavailable in this browser", "err");
+      applyState("unavailable", "Bluetooth not supported");
+      return;
+    }
+    if (typeof navigator.bluetooth.getAvailability === "function") {
+      try {
+        const available = await navigator.bluetooth.getAvailability();
+        if (!available) {
+          showBanner("No Bluetooth adapter was detected on this device.");
+          connectBtn.disabled = true;
+          applyState("unavailable", "No Bluetooth adapter");
+          log("No Bluetooth adapter detected", "err");
+          return;
+        }
+      } catch (e) {
+        // Non-critical — proceed without this check if it's not implemented.
+      }
+    }
+    log("Ready. Click connect to scan for the simulated peripheral.");
+    await loadRememberedDevice();
+  }
+
+  // ---- wire up UI ----
+  slider.addEventListener("input", () => { number.value = slider.value; });
+  number.addEventListener("input", () => {
+    let v = Math.max(0, Math.min(255, parseInt(number.value, 10) || 0));
+    number.value = v;
+    slider.value = v;
+  });
+
+  connectBtn.addEventListener("click", requestAndConnect);
+  reconnectLastBtn.addEventListener("click", reconnectToLastDevice);
+  disconnectBtn.addEventListener("click", disconnectDevice);
+  cancelReconnectBtn.addEventListener("click", cancelReconnectClicked);
+  readBtn.addEventListener("click", readStatusNow);
+  sendBtn.addEventListener("click", sendControlValue);
+
+  checkAvailability();
+})();
+</script>
+</body>
+</html>
